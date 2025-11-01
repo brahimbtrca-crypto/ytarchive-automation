@@ -1,0 +1,3 @@
+# one URL per line - public YouTube live URLs or channel live link
+https://www.youtube.com/watch?v=TgYw7Rqce-A
+https://www.youtube.com/watch?v=dEhQ6eoWtR4
