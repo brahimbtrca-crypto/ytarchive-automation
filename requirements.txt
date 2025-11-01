@@ -1,0 +1,4 @@
+yt-dlp==2025.10.01
+aiofiles==23.1.0
+python-dateutil==2.8.2
+tenacity==8.2.2
