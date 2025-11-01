@@ -1,85 +1,52 @@
 import os
-import threading
-import time
-import logging
-from ytarchive.ytarchive import download_live
+import subprocess
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import json
 
-# ---------------- CONFIG -----------------
-URLS_FILE = "urls.txt"
-DOWNLOAD_DIR = "downloads"
-LOG_FILE = "yt_archive.log"
-MAX_RETRIES = 3
-DRIVE_FOLDER_ID = None  # optional: set your Google Drive folder ID
+# ---------- CONFIG ----------
+URLS_FILE = "urls.txt"  # Your livestream URLs
+DOWNLOAD_FOLDER = "downloads"  # Folder where ytarchive will save recordings
 
-# ----------------------------------------
+# ---------- GOOGLE DRIVE ----------
+TOKEN_FILE = "token.json"
 
-# Setup logging
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Read Google token
+creds = None
+if os.path.exists(TOKEN_FILE):
+    creds = Credentials.from_authorized_user_file(TOKEN_FILE, ["https://www.googleapis.com/auth/drive.file"])
+service = build("drive", "v3", credentials=creds)
 
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-# Authenticate Google Drive
-def google_drive_service():
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json")
-    else:
-        logging.error("Google Drive credentials not found. Run OAuth flow to generate token.json.")
-        raise FileNotFoundError("token.json not found")
-    service = build('drive', 'v3', credentials=creds)
-    return service
-
-# Upload to Google Drive
-def upload_to_drive(file_path, service):
+def upload_to_drive(file_path):
     file_metadata = {'name': os.path.basename(file_path)}
-    if DRIVE_FOLDER_ID:
-        file_metadata['parents'] = [DRIVE_FOLDER_ID]
     media = MediaFileUpload(file_path, resumable=True)
-    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    logging.info(f"Uploaded {file_path} to Google Drive (ID: {file['id']})")
+    service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    print(f"Uploaded {file_path} to Google Drive.")
 
-# Record a single URL
-def record_url(url):
-    retries = 0
-    while retries < MAX_RETRIES:
-        try:
-            logging.info(f"Starting recording for {url} (Attempt {retries+1})")
-            file_path = download_live(url, DOWNLOAD_DIR)
-            logging.info(f"Finished recording: {file_path}")
-            
-            # Upload
-            drive_service = google_drive_service()
-            upload_to_drive(file_path, drive_service)
-            
-            # Remove local copy
-            os.remove(file_path)
-            logging.info(f"Deleted local file: {file_path}")
-            break
-        except Exception as e:
-            logging.error(f"Error recording {url}: {e}")
-            retries += 1
-            time.sleep(60)  # wait a minute before retry
+# ---------- MAIN ----------
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Main loop
-def main():
-    with open(URLS_FILE, "r") as f:
-        urls = [line.strip() for line in f if line.strip()]
+with open(URLS_FILE, "r") as f:
+    urls = [line.strip() for line in f if line.strip()]
+
+for url in urls:
+    print(f"Recording livestream: {url}")
+    # ytarchive command
+    result = subprocess.run([
+        "ytarchive",
+        "record",
+        url,
+        "--output", os.path.join(DOWNLOAD_FOLDER, "%(title)s.%(ext)s")
+    ], capture_output=True, text=True)
     
-    threads = []
-    for url in urls:
-        t = threading.Thread(target=record_url, args=(url,))
-        t.start()
-        threads.append(t)
-    
-    for t in threads:
-        t.join()
+    print(result.stdout)
+    if result.returncode != 0:
+        print(f"Error recording {url}: {result.stderr}")
+        continue
 
-if __name__ == "__main__":
-    main()
+# Upload all files in DOWNLOAD_FOLDER to Google Drive
+for filename in os.listdir(DOWNLOAD_FOLDER):
+    file_path = os.path.join(DOWNLOAD_FOLDER, filename)
+    if os.path.isfile(file_path):
+        upload_to_drive(file_path)
