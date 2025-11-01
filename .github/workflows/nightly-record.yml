@@ -1,24 +1,26 @@
-name: Nightly YouTube Record
+name: Nightly YouTube Recording
 
 on:
   schedule:
-    - cron: "0 0 * * *"  # every night at midnight UTC
+    - cron: '*/5 * * * *'  # checks every 5 minutes
   workflow_dispatch:
 
 jobs:
   record:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v3
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
-
+          python-version: '3.11'
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run yt_auto_download.py
-        run: python yt_auto_download.py
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Recorder
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+        run: |
+          echo "$GOOGLE_TOKEN_JSON" > token.json
+          python yt_auto_download.py
