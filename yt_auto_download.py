@@ -1,107 +1,85 @@
 import os
+import threading
 import time
 import logging
-from concurrent.futures import ThreadPoolExecutor
-from ytarchive import YtArchive
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
+from ytarchive.ytarchive import download_live
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-# ==========================
-# CONFIGURATION
-# ==========================
-DOWNLOAD_DIR = "downloads"
+# ---------------- CONFIG -----------------
 URLS_FILE = "urls.txt"
-MAX_CONCURRENT = 4
-MAX_RETRIES = 3
-RETRY_DELAY = 60  # seconds
+DOWNLOAD_DIR = "downloads"
 LOG_FILE = "yt_archive.log"
+MAX_RETRIES = 3
+DRIVE_FOLDER_ID = None  # optional: set your Google Drive folder ID
 
-# ==========================
-# SETUP LOGGING
-# ==========================
+# ----------------------------------------
+
+# Setup logging
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logging.getLogger().addHandler(logging.StreamHandler())
 
-# ==========================
-# GOOGLE DRIVE AUTH
-# ==========================
-gauth = GoogleAuth()
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# First time setup: run this locally to authenticate and save credentials.json
-# Then push credentials.json to repo or GitHub Secrets if using Actions
-gauth.LocalWebserverAuth()
-drive = GoogleDrive(gauth)
+# Authenticate Google Drive
+def google_drive_service():
+    creds = None
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json")
+    else:
+        logging.error("Google Drive credentials not found. Run OAuth flow to generate token.json.")
+        raise FileNotFoundError("token.json not found")
+    service = build('drive', 'v3', credentials=creds)
+    return service
 
-# ==========================
-# HELPER FUNCTIONS
-# ==========================
-def record_and_upload(url: str):
-    """Record livestream with ytarchive and upload to Google Drive."""
-    for attempt in range(1, MAX_RETRIES + 1):
+# Upload to Google Drive
+def upload_to_drive(file_path, service):
+    file_metadata = {'name': os.path.basename(file_path)}
+    if DRIVE_FOLDER_ID:
+        file_metadata['parents'] = [DRIVE_FOLDER_ID]
+    media = MediaFileUpload(file_path, resumable=True)
+    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    logging.info(f"Uploaded {file_path} to Google Drive (ID: {file['id']})")
+
+# Record a single URL
+def record_url(url):
+    retries = 0
+    while retries < MAX_RETRIES:
         try:
-            logging.info(f"Starting recording for: {url} (Attempt {attempt})")
-
-            # Record livestream
-            archive = YtArchive(url, output_dir=DOWNLOAD_DIR)
-            archive.record()  # blocks until livestream ends
-            filename = archive.latest_file
-
-            if not filename or not os.path.exists(filename):
-                raise FileNotFoundError("Recorded file not found")
-
-            logging.info(f"Finished recording: {filename}")
-
-            # Upload to Google Drive
-            file_drive = drive.CreateFile({'title': os.path.basename(filename)})
-            file_drive.SetContentFile(filename)
-            file_drive.Upload()
-            logging.info(f"Uploaded {filename} to Google Drive")
-
-            # Delete local copy
-            os.remove(filename)
-            logging.info(f"Deleted local file: {filename}")
-
-            break  # success, exit retry loop
-
+            logging.info(f"Starting recording for {url} (Attempt {retries+1})")
+            file_path = download_live(url, DOWNLOAD_DIR)
+            logging.info(f"Finished recording: {file_path}")
+            
+            # Upload
+            drive_service = google_drive_service()
+            upload_to_drive(file_path, drive_service)
+            
+            # Remove local copy
+            os.remove(file_path)
+            logging.info(f"Deleted local file: {file_path}")
+            break
         except Exception as e:
-            logging.error(f"Error with URL {url}: {e}")
-            if attempt < MAX_RETRIES:
-                logging.info(f"Retrying in {RETRY_DELAY}s...")
-                time.sleep(RETRY_DELAY)
-            else:
-                logging.error(f"Failed to process {url} after {MAX_RETRIES} attempts")
+            logging.error(f"Error recording {url}: {e}")
+            retries += 1
+            time.sleep(60)  # wait a minute before retry
 
-
-# ==========================
-# MAIN
-# ==========================
+# Main loop
 def main():
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-    # Load URLs
-    if not os.path.exists(URLS_FILE):
-        logging.error(f"{URLS_FILE} not found! Exiting.")
-        return
-
     with open(URLS_FILE, "r") as f:
         urls = [line.strip() for line in f if line.strip()]
-
-    if not urls:
-        logging.info("No URLs found in urls.txt. Exiting.")
-        return
-
-    logging.info(f"Starting processing {len(urls)} URLs...")
-
-    # Run concurrent recordings
-    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as executor:
-        executor.map(record_and_upload, urls)
-
-    logging.info("All tasks completed.")
-
+    
+    threads = []
+    for url in urls:
+        t = threading.Thread(target=record_url, args=(url,))
+        t.start()
+        threads.append(t)
+    
+    for t in threads:
+        t.join()
 
 if __name__ == "__main__":
     main()
