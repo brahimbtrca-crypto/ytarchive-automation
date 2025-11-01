@@ -1,26 +1,24 @@
-name: Nightly Record
+name: Nightly YouTube Record
 
 on:
   schedule:
-    - cron: "0 0 * * *"  # runs every night at midnight UTC
-  workflow_dispatch:      # allows manual run from GitHub UI
+    - cron: "0 0 * * *"  # every night at midnight UTC
+  workflow_dispatch:
 
 jobs:
   record:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: Run recording script
-        run: |
-          python main.py
+      - name: Run yt_auto_download.py
+        run: python yt_auto_download.py
