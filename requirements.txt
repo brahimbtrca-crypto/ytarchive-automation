@@ -1,4 +1,5 @@
-git+https://github.com/ytarchive/ytarchive.git
-google-api-python-client
-google-auth-httplib2
+ytarchive
+google-auth
 google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
