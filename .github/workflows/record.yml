@@ -1,23 +1,30 @@
 name: Record YouTube Livestreams
 
 on:
-  workflow_dispatch:  # lets you run it manually
+  workflow_dispatch:  # allows manual run
   schedule:
-    - cron: '*/30 * * * *'  # runs every 30 minutes (we can adjust later)
+    - cron: '*/15 * * * *'  # runs every 15 minutes, adjust as needed
 
 jobs:
   record:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Download ytarchive
-      run: |
-        mkdir -p bin
-        curl -L -o bin/ytarchive https://github.com/Kethsar/ytarchive/releases/download/v0.5.0/ytarchive-linux-amd64
-        chmod +x bin/ytarchive
+      - name: Download ytarchive
+        run: |
+          mkdir -p bin
+          curl -L -o bin/ytarchive https://github.com/Kethsar/ytarchive/releases/download/v0.5.0/ytarchive-linux-amd64
+          chmod +x bin/ytarchive
 
-    - name: Show ytarchive version
-      run: bin/ytarchive --version
+      - name: Create recordings folder
+        run: mkdir -p recordings
+
+      - name: Record livestreams
+        run: |
+          while IFS= read -r url; do
+            echo "Recording $url"
+            bin/ytarchive --output recordings/ --url "$url"
+          done < urls.txt
