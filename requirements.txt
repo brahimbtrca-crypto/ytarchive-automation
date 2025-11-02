@@ -1,4 +1,4 @@
-ytarchive
+git+https://github.com/ytarchive/ytarchive.git
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
