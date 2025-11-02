@@ -1,4 +1,5 @@
-git+https://github.com/ytarchive/ytarchive.git
+# Install ytarchive directly from GitHub zip
+https://github.com/ytarchive/ytarchive/archive/refs/heads/main.zip
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
