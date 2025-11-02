@@ -1,0 +1,83 @@
+name: Record YouTube Livestreams and Upload to Drive
+
+on:
+  workflow_dispatch: # Manual trigger
+  schedule:
+    - cron: "*/15 * * * *" # Every 15 minutes, adjust as needed
+
+jobs:
+  record-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1 — Checkout repository
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      # Step 2 — Install Go (for ytarchive)
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      # Step 3 — Download ytarchive binary
+      - name: Download ytarchive
+        run: |
+          wget -O ytarchive https://github.com/ytarchive/ytarchive/releases/latest/download/ytarchive_linux_amd64
+          chmod +x ytarchive
+          sudo mv ytarchive /usr/local/bin/
+
+      # Step 4 — Install Python & dependencies for Google Drive
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+
+      # Step 5 — Create token.json from secret
+      - name: Write Google credentials
+        run: |
+          echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > credentials.json
+          python - <<EOF
+import json
+from google.oauth2.credentials import Credentials
+creds_dict = json.load(open("credentials.json"))
+with open("token.json", "w") as f:
+    json.dump(creds_dict, f)
+EOF
+
+      # Step 6 — Record livestreams
+      - name: Record livestreams
+        run: |
+          mkdir -p recordings
+          while IFS= read -r url; do
+            echo "Recording $url..."
+            ytarchive record --output recordings/ "$url" &
+          done < urls.txt
+          wait
+
+      # Step 7 — Upload recordings to Google Drive
+      - name: Upload recordings to Drive
+        run: |
+          python - <<EOF
+import os
+import json
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
+FOLDER_ID = "1lVh1B2fSODUiJwyRb9BNpEJGqFyJaccD"
+
+creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/drive.file"])
+service = build('drive', 'v3', credentials=creds)
+
+for file_name in os.listdir("recordings"):
+    file_path = os.path.join("recordings", file_name)
+    media = MediaFileUpload(file_path)
+    file_metadata = {"name": file_name, "parents": [FOLDER_ID]}
+    service.files().create(body=file_metadata, media_body=media).execute()
+EOF
