@@ -1,47 +1,56 @@
-name: Record YouTube Livestreams and Upload to Drive
+name: Record YouTube Streams & Upload to Drive
 
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    # Runs every day at 12:15 AM
+    - cron: '15 0 * * *'
   workflow_dispatch:
 
 jobs:
   record-and-upload:
     runs-on: ubuntu-latest
+
+    env:
+      GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+      YT_URLS: ${{ secrets.YT_URLS }}
+
     steps:
-      - name: Checkout repo
+      # 1️⃣ Checkout repo
+      - name: Checkout Repo
         uses: actions/checkout@v3
 
-      - name: Install Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21'
-
-      - name: Install dependencies
-        run: |
-          go install github.com/ytarchive/ytarchive/cmd/ytarchive@latest
-
-      - name: Create recordings folder
-        run: mkdir -p recordings
-
-      - name: Record livestreams
-        run: |
-          while read url; do
-            ytarchive -url "$url" -output recordings/
-          done < urls.txt
-
-      - name: Install Python
+      # 2️⃣ Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install Google Drive dependencies
-        run: pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
-
-      - name: Upload to Google Drive
-        env:
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      # 3️⃣ Install Google API client
+      - name: Install Google API
         run: |
-          echo "$GOOGLE_CREDENTIALS_JSON" > token.json
+          python -m pip install --upgrade pip
+          pip install google-auth google-auth-oauthlib google-api-python-client
+
+      # 4️⃣ Write token.json
+      - name: Setup Google Drive token
+        run: |
+          echo "$GOOGLE_TOKEN_JSON" > token.json
+
+      # 5️⃣ Download ytarchive binary
+      - name: Download ytarchive
+        run: |
+          curl -L -o ytarchive https://github.com/ytarchive/ytarchive/releases/download/v0.3.6/ytarchive-linux-amd64
+          chmod +x ytarchive
+
+      # 6️⃣ Record streams
+      - name: Record streams
+        run: |
+          mkdir -p recordings
+          for url in $YT_URLS; do
+            ./ytarchive -o "recordings" "$url"
+          done
+
+      # 7️⃣ Upload to Google Drive
+      - name: Upload to Drive
+        run: |
           python upload_to_drive.py
