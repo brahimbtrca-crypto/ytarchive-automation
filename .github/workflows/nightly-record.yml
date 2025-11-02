@@ -2,16 +2,19 @@ name: Record YouTube Livestreams
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Checks every 5 minutes, adjust if needed
+    - cron: '*/5 * * * *'  # every 5 minutes (adjust if needed)
   workflow_dispatch:
 
 jobs:
   record:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Clone ytarchive repo
+        run: git clone https://github.com/Kethsar/ytarchive.git
+        shell: bash
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -20,11 +23,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install ./ytarchive
+        shell: bash
 
       - name: Prepare token.json
         run: echo "${{ secrets.GOOGLE_TOKEN_JSON }}" > token.json
 
       - name: Run livestream recorder
         run: python yt_auto_download.py
+        shell: bash
